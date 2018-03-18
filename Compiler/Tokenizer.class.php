@@ -97,17 +97,23 @@
              * @var string $type The keyword type from Parser
              */
             foreach(self::$keywords as $value => $type) {
-              /** @var int $op_len Length of the operator we are comparing */
-              $op_len = strlen($value);
-              if(substr_compare($line, $value, $i, $op_len) == 0){
+              /** @var int $key_len Length of the keyword we are comparing */
+              $key_len = strlen($value);
+              if(substr_compare($line, $value, $i, $key_len) == 0){
                 $token = new Token($type, $value, $i);
                 array_push($tokens, $token);
-                $i += $op_len - 1;
+                $i += $key_len - 1;
                 break;
               }
             }
+            if(!$token){
+              /** Keyword was not found, tokenize the word as a variable instead */
+              $token = self::tokenizeAlpha($line, $i, $len, true);
+              array_push($tokens, $token);
+            }
           } else {
-
+            $token = self::tokenizeAlpha($line, $i, $len, false);
+            array_push($tokens, $token);
           }
         }
       }
@@ -130,26 +136,59 @@
       /** @var bool $has_dot Used in the case of a float */
       $has_dot = false;
 
-      // Parse string starting from $i to find the full number
+      /** Parse string starting from $i to find the full number */
       for($j = $i; $j < $len; $j++){
+        $i = $j;
         if(preg_match(self::$regex[self::RE_NUMERIC], $line[$j])) {
-          // Concat found number to $value
+          /** Concat found number to $value */
           $value .= $line[$j];
         } else if($line[$j] === '.') {
           if(!$has_dot) {
-            // The number is a float
+            /** The number is a float */
             $has_dot = true;
             $value .= $line[$j];
           } else {
             throw new Exception('Improperly formed number starting at position ' . $i);
           }
-        } else { // Non-numeric character found, full number is in $value
-          // Update $i to match current offset
-          $i = $j;
+        } else { /** Non-numeric character found, full number is in $value */
+          /** Update $i to match current offset */
+          $i = $j - 1;
           break;
         }
       }
       return new Token(Parser::T_NUMERIC, $value, $i);
+    }
+
+    /**
+     * Creates a T_ALPHA token from the input string
+     * @access public
+     * @param string $line The string that will be tokenized
+     * @param int $i The index at which the number starts in $line
+     * @param int $len The length of the $line
+     * @param bool $search_keywords Determines if we are looking for words or variable names
+     * @return Token The resulting T_ALPHA token
+     */
+    function tokenizeAlpha(string $line, int &$i, int $len, bool $search_keywords): Token {
+      /** @var string $value Holds the full word that will be tokenized */
+      $value = $line[$i++];
+
+      /** Parse string starting from $i to find the full word */
+      for($j = $i; $j < $len; $j++){
+        $i = $j;
+        if(preg_match(self::$regex[self::RE_ALPHA], $line[$j])) {
+          /** Concat found letter to $value */
+          $value .= $line[$j];
+        } else { /** Non-alpha character found, full word is in $value */
+          /** Update $i to match current offset */
+          $i = $j - 1;
+          break;
+        }
+      }
+      if($search_keywords){
+        return new Token(Parser::T_VARIABLE, $value, $i);
+      }else {
+        return new Token(Parser::T_ALPHA, $value, $i);
+      }
     }
   }
 ?>

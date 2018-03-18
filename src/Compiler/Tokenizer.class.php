@@ -70,27 +70,31 @@
         $offset = $i;
         // Use $regex to search for a match on the current character in $line
         if(preg_match(self::$regex[self::RE_OPERATORS], $line[$i])) {
-          /**
-           * Compare each operator in $operators to the current character in $line
-           * @var string $value The operator string
-           * @var string $type The operator type from Parser
-           */
-          foreach(self::$operators as $value => $type) {
-            /** @var int $op_len Length of the operator we are comparing */
-            $op_len = strlen($value);
-            if(substr_compare($line, $value, $i, $op_len) == 0){
-              $token = new Token($type, $value, $i);
-              $i += $op_len - 1;
-              /** If we have found the opening or close funtion braces, update $search_keywords */
-              if($value == '{{') {
-                $search_keywords = true;
-              } else if($value == '}}'){
-                $search_keywords = false;
+          if(!$search_keywords && $line[$i] !== '{'){
+            $token = self::tokenizeAlpha($line, $i, $len, false);
+          } else {
+            /**
+             * Compare each operator in $operators to the current character in $line
+             * @var string $value The operator string
+             * @var string $type The operator type from Parser
+             */
+            foreach(self::$operators as $value => $type) {
+              /** @var int $op_len Length of the operator we are comparing */
+              $op_len = strlen($value);
+              if(substr_compare($line, $value, $i, $op_len) == 0){
+                $token = new Token($type, $value, $i);
+                $i += $op_len - 1;
+                /** If we have found the opening or close funtion braces, update $search_keywords */
+                if($value == '{{') {
+                  $search_keywords = true;
+                } else if($value == '}}'){
+                  $search_keywords = false;
+                }
               }
             }
           }
         /** If {{ has not been found we should tokenize as a string of Alphanumerical characters */
-        } else if (!$search_keywords) {
+        } else if (!$search_keywords && preg_match(self::$regex[self::RE_ALPHANUMERIC], $line[$i])) {
           $token = self::tokenizeAlpha($line, $i, $len, false);
         } else if(preg_match(self::$regex[self::RE_NUMERIC], $line[$i])) {
           $token = self::tokenizeNumeric($line, $i, $len);

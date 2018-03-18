@@ -8,7 +8,7 @@
      * @test
      */
     public function testTokenizerTokens() {
-      $tokens = Tokenizer::tokenize('{{#unless @last}}word1234{{/unless}}');
+      $tokens = Tokenizer::tokenize('{{#unless @last}}@ word1234{{/unless}}');
       $this->assertEquals([
         new Token(Parser::T_BRACES_OPEN, '{{', 0),
         new Token(Parser::T_FUNCTION_START, '#', 2),
@@ -16,11 +16,12 @@
         new Token(Parser::T_AT, '@', 10),
         new Token(Parser::T_LAST, 'last', 11),
         new Token(Parser::T_BRACES_CLOSE, '}}', 15),
-        new Token(Parser::T_ALPHANUMERIC, 'word1234', 17),
-        new Token(Parser::T_BRACES_OPEN, '{{', 25),
-        new Token(Parser::T_FUNCTION_END, '/', 27),
-        new Token(Parser::T_IF, 'unless', 28),
-        new Token(Parser::T_BRACES_CLOSE, '}}', 34),
+        new Token(Parser::T_ALPHANUMERIC, '@', 17),
+        new Token(Parser::T_ALPHANUMERIC, 'word1234', 19),
+        new Token(Parser::T_BRACES_OPEN, '{{', 27),
+        new Token(Parser::T_FUNCTION_END, '/', 29),
+        new Token(Parser::T_IF, 'unless', 30),
+        new Token(Parser::T_BRACES_CLOSE, '}}', 36),
       ], $tokens);
     }
 

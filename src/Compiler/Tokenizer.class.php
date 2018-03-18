@@ -10,6 +10,7 @@
       '{{'        => Parser::T_BRACES_OPEN,
       '}}'        => Parser::T_BRACES_CLOSE,
       '#'         => Parser::T_FUNCTION_START,
+      '/'         => Parser::T_FUNCTION_END,
       '@'         => Parser::T_AT,
     );
 
@@ -31,8 +32,9 @@
      */
     private static $regex = array(
       '/[0-9]/',
-      '/[\{\}\#\@]/',
-      '/[a-zA-Z]/'
+      '/[\{\}\#\@\/]/',
+      '/[a-zA-Z]/',
+      '/[^\s^\{]/'
     );
 
     /**
@@ -40,17 +42,19 @@
      */
 
     /** @var int RE_NUMERIC */
-    const RE_NUMERIC       = 0;
+    const RE_NUMERIC          = 0;
     /** @var int RE_OPERATORS */
-    const RE_OPERATORS     = 1;
+    const RE_OPERATORS        = 1;
     /** @var int RE_ALPHA */
-    const RE_ALPHA         = 2;
+    const RE_ALPHA            = 2;
+    /** @var int RE_ALPHANUMERIC */
+    const RE_ALPHANUMERIC     = 3;
 
     /**
      * Creates an array of tokens from the input line
      * @param string $line The string that will be tokenized
      */
-    public function tokenize(string $line) {
+    public function tokenize(string $line): array {
       /** @var bool $search_keywords Determines if we are looking for keywords or strings */
       $search_keywords = false;
       /** @var int $offset Current position in the input line */
@@ -65,10 +69,7 @@
         $token = NULL;
         $offset = $i;
         // Use $regex to search for a match on the current character in $line
-        if(preg_match(self::$regex[self::RE_NUMERIC], $line[$i])) {
-          $token = self::tokenizeNumeric($line, $i, $len);
-          array_push($tokens, $token);
-        } else if(preg_match(self::$regex[self::RE_OPERATORS], $line[$i])) {
+        if(preg_match(self::$regex[self::RE_OPERATORS], $line[$i])) {
           /**
            * Compare each operator in $operators to the current character in $line
            * @var string $value The operator string
@@ -79,7 +80,6 @@
             $op_len = strlen($value);
             if(substr_compare($line, $value, $i, $op_len) == 0){
               $token = new Token($type, $value, $i);
-              array_push($tokens, $token);
               $i += $op_len - 1;
               /** If we have found the opening or close funtion braces, update $search_keywords */
               if($value == '{{') {
@@ -89,35 +89,37 @@
               }
             }
           }
+        /** If {{ has not been found we should tokenize as a string of Alphanumerical characters */
+        } else if (!$search_keywords) {
+          $token = self::tokenizeAlpha($line, $i, $len, false);
+        } else if(preg_match(self::$regex[self::RE_NUMERIC], $line[$i])) {
+          $token = self::tokenizeNumeric($line, $i, $len);
         } else if(preg_match(self::$regex[self::RE_ALPHA], $line[$i])) {
-          if($search_keywords){
-            /**
-             * Compare each keyword in $keywords to the current character in $line
-             * @var string $value The keyword string
-             * @var string $type The keyword type from Parser
-             */
-            foreach(self::$keywords as $value => $type) {
-              /** @var int $key_len Length of the keyword we are comparing */
-              $key_len = strlen($value);
-              if(substr_compare($line, $value, $i, $key_len) == 0){
-                $token = new Token($type, $value, $i);
-                array_push($tokens, $token);
-                $i += $key_len - 1;
-                break;
-              }
+          /**
+           * Compare each keyword in $keywords to the current character in $line
+           * @var string $value The keyword string
+           * @var string $type The keyword type from Parser
+           */
+           foreach(self::$keywords as $value => $type) {
+            /** @var int $key_len Length of the keyword we are comparing */
+            $key_len = strlen($value);
+            if(substr_compare($line, $value, $i, $key_len) == 0){
+              $token = new Token($type, $value, $i);
+              $i += $key_len - 1;
+              break;
             }
-            if(!$token){
-              /** Keyword was not found, tokenize the word as a variable instead */
-              $token = self::tokenizeAlpha($line, $i, $len, true);
-              array_push($tokens, $token);
-            }
-          } else {
-            $token = self::tokenizeAlpha($line, $i, $len, false);
-            array_push($tokens, $token);
+          }
+          if(!$token){
+            /** Keyword was not found, tokenize the word as a variable instead */
+            $token = self::tokenizeAlpha($line, $i, $len, true);
           }
         }
+        if($token) {
+          array_push($tokens, $token);
+        }
       }
-      print_r($tokens) . '<br/>';
+      print_r($tokens);
+      return $tokens;
     }
 
     /**
@@ -130,33 +132,33 @@
      * @throws Exception If the number is not formed correctly, 1..234
      */
     function tokenizeNumeric(string $line, int &$i, int $len): Token {
+      /** @var int $init_offset The starting position in $line */
+      $init_offset = $i;
       /** @var string $value Holds the full number that will be tokenized */
       $value = $line[$i++];
-
       /** @var bool $has_dot Used in the case of a float */
       $has_dot = false;
 
       /** Parse string starting from $i to find the full number */
-      for($j = $i; $j < $len; $j++){
-        $i = $j;
-        if(preg_match(self::$regex[self::RE_NUMERIC], $line[$j])) {
+      for($i; $i < $len; $i++){
+        if(preg_match(self::$regex[self::RE_NUMERIC], $line[$i])) {
           /** Concat found number to $value */
-          $value .= $line[$j];
-        } else if($line[$j] === '.') {
+          $value .= $line[$i];
+        } else if($line[$i] === '.') {
           if(!$has_dot) {
             /** The number is a float */
             $has_dot = true;
-            $value .= $line[$j];
+            $value .= $line[$i];
           } else {
             throw new Exception('Improperly formed number starting at position ' . $i);
           }
         } else { /** Non-numeric character found, full number is in $value */
           /** Update $i to match current offset */
-          $i = $j - 1;
+          $i--;
           break;
         }
       }
-      return new Token(Parser::T_NUMERIC, $value, $i);
+      return new Token(Parser::T_NUMERIC, $value, $init_offset);
     }
 
     /**
@@ -169,25 +171,28 @@
      * @return Token The resulting T_ALPHA token
      */
     function tokenizeAlpha(string $line, int &$i, int $len, bool $search_keywords): Token {
+      /** @var int $init_offset The starting position in $line */
+      $init_offset = $i;
       /** @var string $value Holds the full word that will be tokenized */
       $value = $line[$i++];
+      /** @var int $regex_index The index of the regex in $regex that will be used for matching */
+      $regex_index = $search_keywords ? self::RE_ALPHA : self::RE_ALPHANUMERIC;
 
       /** Parse string starting from $i to find the full word */
-      for($j = $i; $j < $len; $j++){
-        $i = $j;
-        if(preg_match(self::$regex[self::RE_ALPHA], $line[$j])) {
+      for($i; $i < $len; $i++){
+        if(preg_match(self::$regex[$regex_index], $line[$i])) {
           /** Concat found letter to $value */
-          $value .= $line[$j];
+          $value .= $line[$i];
         } else { /** Non-alpha character found, full word is in $value */
           /** Update $i to match current offset */
-          $i = $j - 1;
+          $i--;
           break;
         }
       }
       if($search_keywords){
-        return new Token(Parser::T_VARIABLE, $value, $i);
+        return new Token(Parser::T_VARIABLE, $value, $init_offset);
       }else {
-        return new Token(Parser::T_ALPHA, $value, $i);
+        return new Token(Parser::T_ALPHANUMERIC, $value, $init_offset);
       }
     }
   }

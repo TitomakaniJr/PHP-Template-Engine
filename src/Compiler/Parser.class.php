@@ -25,7 +25,7 @@
      /** @var int T_AT */
      const T_AT                 = 10;
      /** @var int T_ALPHA */
-     const T_ALPHA              = 11;
+     const T_ALPHANUMERIC       = 11;
      /** @var int T_NUMERIC */
      const T_NUMERIC            = 12;
      /** @var int T_VARIABLE */

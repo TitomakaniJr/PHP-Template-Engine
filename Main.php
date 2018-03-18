@@ -3,12 +3,10 @@
   <body>
 
     <?php
-      spl_autoload_register(function ($class_name) {
-        include 'Compiler/' . $class_name . '.class.php';
-      });
+      require __DIR__ . '/vendor/autoload.php';
 
       try{
-        Tokenizer::tokenize('{{#unless @last}}@ 12.345@@@@');
+        $tokens = Tokenizer::tokenize('{{#unless @last someVar}}@ 12.345@@@@ 1234Word5678');
       } catch(Exception $e) {
         echo $e->getMessage();
       }

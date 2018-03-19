@@ -7,11 +7,12 @@
      * @var array $operators All operator strings that will be searched for while tokenizing the input
      */
     private static $operators = array(
-      '{{'        => Parser::T_BRACES_OPEN,
-      '}}'        => Parser::T_BRACES_CLOSE,
-      '#'         => Parser::T_FUNCTION_START,
-      '/'         => Parser::T_FUNCTION_END,
-      '@'         => Parser::T_AT,
+      '{{'        => Token::T_BRACES_OPEN,
+      '}}'        => Token::T_BRACES_CLOSE,
+      '#'         => Token::T_FUNCTION_START,
+      '/'         => Token::T_FUNCTION_END,
+      '@'         => Token::T_AT,
+      '->'        => Token::T_ARROW
     );
 
     /**
@@ -19,11 +20,13 @@
      * @var array $keywords All keyword strings that will be searched for while tokenizing the input
      */
     private static $keywords = array(
-      'unless'     => Parser::T_IF,
-      'else'       => Parser::T_ELSE,
-      'each'       => Parser::T_EACH,
-      'first'      => Parser::T_FIRST,
-      'last'       => Parser::T_LAST,
+      'unless'     => Token::T_IF,
+      'else'       => Token::T_ELSE,
+      'each'       => Token::T_EACH,
+      'first'      => Token::T_FIRST,
+      'last'       => Token::T_LAST,
+      'true'       => Token::T_TRUE,
+      'false'      => Token::T_FALSE
     );
 
     /**
@@ -32,9 +35,10 @@
      */
     private static $regex = array(
       '/[0-9]/',
-      '/[\{\}\#\@\/]/',
+      '/[\{\}\#\@\/(->)]/',
       '/[a-zA-Z]/',
-      '/[^\s^\{]/'
+      '/[^\s^\{]/',
+      '/\s/'
     );
 
     /**
@@ -49,10 +53,13 @@
     const RE_ALPHA            = 2;
     /** @var int RE_ALPHANUMERIC */
     const RE_ALPHANUMERIC     = 3;
+    /** @var int RE_SPACE */
+    const RE_SPACE            = 4;
 
     /**
      * Creates an array of tokens from the input line
      * @param string $line The string that will be tokenized
+     * @return array An array of tokens that were made from the input
      */
     public function tokenize(string $line): array {
       /** @var bool $search_keywords Determines if we are looking for keywords or strings */
@@ -117,12 +124,23 @@
             /** Keyword was not found, tokenize the word as a variable instead */
             $token = self::tokenizeAlpha($line, $i, $len, true);
           }
+        } else if(preg_match(self::$regex[self::RE_SPACE], $line[$i]) && !$search_keywords) {
+          /** @var int $init_offset The starting position in $line */
+          $init_offset = $i;
+          /** Count all white space as a single space */
+          for($i; $i < $len; $i++){
+            if(!preg_match(self::$regex[self::RE_SPACE], $line[$i])) {
+              /** Update $i to match current offset */
+              $i--;
+              break;
+            }
+          }
+          $token = new Token(Token::T_SPACE, ' ', $i);
         }
         if($token) {
           array_push($tokens, $token);
         }
       }
-      print_r($tokens);
       return $tokens;
     }
 
@@ -135,7 +153,7 @@
      * @return Token The resulting T_NUMERIC token
      * @throws Exception If the number is not formed correctly, 1..234
      */
-    function tokenizeNumeric(string $line, int &$i, int $len): Token {
+    private function tokenizeNumeric(string $line, int &$i, int $len): Token {
       /** @var int $init_offset The starting position in $line */
       $init_offset = $i;
       /** @var string $value Holds the full number that will be tokenized */
@@ -162,7 +180,7 @@
           break;
         }
       }
-      return new Token(Parser::T_NUMERIC, $value, $init_offset);
+      return new Token(Token::T_NUMERIC, $value, $init_offset);
     }
 
     /**
@@ -174,7 +192,7 @@
      * @param bool $search_keywords Determines if we are looking for words or variable names
      * @return Token The resulting T_ALPHA token
      */
-    function tokenizeAlpha(string $line, int &$i, int $len, bool $search_keywords): Token {
+    private function tokenizeAlpha(string $line, int &$i, int $len, bool $search_keywords): Token {
       /** @var int $init_offset The starting position in $line */
       $init_offset = $i;
       /** @var string $value Holds the full word that will be tokenized */
@@ -194,9 +212,9 @@
         }
       }
       if($search_keywords){
-        return new Token(Parser::T_VARIABLE, $value, $init_offset);
+        return new Token(Token::T_VARIABLE, $value, $init_offset);
       }else {
-        return new Token(Parser::T_ALPHANUMERIC, $value, $init_offset);
+        return new Token(Token::T_ALPHANUMERIC, $value, $init_offset);
       }
     }
   }

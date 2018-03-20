@@ -55,52 +55,49 @@
               self::setFunctionBraces($in_func_braces, true, $line_num, $token->offset);
               break;
             case Token::T_EACH:
-              if(end(self::$function_stack) !== Token::T_EACH){
-                /** Check if there was a matching @ tag */
-                self::peakPoundOperator($line_num, $token->offset);
-                array_push(self::$function_stack, Token::T_EACH);
-                if($j + 2 >= count($tokens)) {
-                  throw new Exception('Unexpected end on line ' . $line_num);
-                }
-                if($tokens[$j + 1]->type === Token::T_VARIABLE && $tokens[$j + 2]->type === Token::T_BRACES_CLOSE) {
-                  /** @var string $data_key The key that will be looped over from $data */
-                  $data_key = $tokens[$j + 1]->value;
-                  /** @var string $each_tokens The array of tokens that will be used in every loop */
-                  $each_tokens = array();
-                  $j += 3;
-                  for($i = $i; $i < count($tokenized_file_stream); $i++) {
-                    $line_num = $i + 1;
-                    array_push($each_tokens, array());
-                    $tokens = $tokenized_file_stream[$i];
-                    /** parse through the file until a closing /each tag is found */
-                    for($j = $j; $j < count($tokens); $j++) {
-                      if($j + 3 >= count($tokens)) {
-                        throw new Exception('Unexpected end on line ' . $line_num);
+              /** Check if there was a matching @ tag */
+              self::peakPoundOperator($line_num, $token->offset);
+              array_push(self::$function_stack, Token::T_EACH);
+              if($j + 2 >= count($tokens)) {
+                throw new Exception('Unexpected end on line ' . $line_num);
+              }
+              if($tokens[$j + 1]->type === Token::T_VARIABLE
+                      && $tokens[$j + 2]->type === Token::T_BRACES_CLOSE) {
+                /** @var string $data_key The key that will be looped over from $data */
+                $data_key = $tokens[$j + 1]->value;
+                /** @var string $each_tokens The array of tokens that will be used in every loop */
+                $each_tokens = array();
+                $j += 3;
+                for($i = $i; $i < count($tokenized_file_stream); $i++) {
+                  $line_num = $i + 1;
+                  array_push($each_tokens, array());
+                  $tokens = $tokenized_file_stream[$i];
+                  /** parse through the file until a closing /each tag is found */
+                  for($j = $j; $j < count($tokens); $j++) {
+                    if($j + 3 >= count($tokens)) {
+                      throw new Exception('Unexpected end on line ' . $line_num);
+                    }
+                    $token = $tokens[$j];
+                    if($token->type === Token::T_BRACES_OPEN
+                          && $tokens[$j + 1]->type === Token::T_FUNCTION_END
+                          && $tokens[$j + 2]->type === Token::T_EACH
+                          && $tokens[$j + 3]->type === Token::T_BRACES_CLOSE) {
+                      array_pop(self::$operator_stack);
+                      array_pop(self::$function_stack);
+                      $each_tokens = self::parseEach($data_key, $each_tokens, $data);
+                      foreach($each_tokens as $output_line){
+                        $output[$i] .= $output_line[0];
                       }
-                      $token = $tokens[$j];
-                      if($token->type === Token::T_BRACES_OPEN
-                            && $tokens[$j + 1]->type === Token::T_FUNCTION_END
-                            && $tokens[$j + 2]->type === Token::T_EACH
-                            && $tokens[$j + 3]->type === Token::T_BRACES_CLOSE) {
-                        array_pop(self::$operator_stack);
-                        array_pop(self::$function_stack);
-                        $each_tokens = self::parseEach($data_key, $each_tokens, $data);
-                        foreach($each_tokens as $output_line){
-                          $output[$i] .= $output_line[0];
-                        }
-                        $j += 3;
-                        break 2;
-                      } else {
-                        array_push($each_tokens[$i], $token);
-                      }
+                      $j += 3;
+                      break 2;
+                    } else {
+                      array_push($each_tokens[$i], $token);
                     }
                   }
-                } else {
-                  throw new Exception('Expected array variable after each function call on line '
-                    . $line_num . ' at position ' . $token->offset);
                 }
               } else {
-                //END OF EACH
+                throw new Exception('Expected array variable after each function call on line '
+                  . $line_num . ' at position ' . $token->offset);
               }
               break;
             case Token::T_ELSE:

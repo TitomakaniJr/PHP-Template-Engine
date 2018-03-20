@@ -3,42 +3,78 @@
 
   class CompilerTest extends TestCase {
 
+    protected static $data;
+
+    protected function setUp() {
+      self::$data = array(
+        'Name'       => 'Tony Twyman',
+        'MyBool'     => 'true',
+        'Stuff'      => array(
+          new Stuff('roses', 'red'),
+          new Stuff('violets', 'blue'),
+          new Stuff('you', 'able to solve this'),
+          new Stuff('we', 'interested in you'),
+        )
+      );
+    }
+
     /**
      * Verify that the tokenizer correctly creates tokens from input string
      * @test
      */
-    public function testTokenizerTokens() {
-      $tokens = Tokenizer::tokenize('{{#unless @last}}@ word1234{{/unless}}');
+    public function testTokenizerTokens_0() {
+      $tokens = Tokenizer::tokenize('./tests/Templates/test_0.tmpl');
       $this->assertEquals([
-        new Token(Parser::T_BRACES_OPEN, '{{', 0),
-        new Token(Parser::T_FUNCTION_START, '#', 2),
-        new Token(Parser::T_IF, 'unless', 3),
-        new Token(Parser::T_AT, '@', 10),
-        new Token(Parser::T_LAST, 'last', 11),
-        new Token(Parser::T_BRACES_CLOSE, '}}', 15),
-        new Token(Parser::T_ALPHANUMERIC, '@', 17),
-        new Token(Parser::T_ALPHANUMERIC, 'word1234', 19),
-        new Token(Parser::T_BRACES_OPEN, '{{', 27),
-        new Token(Parser::T_FUNCTION_END, '/', 29),
-        new Token(Parser::T_IF, 'unless', 30),
-        new Token(Parser::T_BRACES_CLOSE, '}}', 36),
+        new Token(Token::T_BRACES_OPEN, '{{', 0),
+        new Token(Token::T_VARIABLE, 'Name', 2),
+        new Token(Token::T_BRACES_CLOSE, '}}', 6),
+        new Token(Token::T_SPACE, ' ', 8),
+        new Token(Token::T_ALPHANUMERIC, 'is', 9),
+        new Token(Token::T_SPACE, ' ', 11),
+        new Token(Token::T_ALPHANUMERIC, 'testing', 12),
+        new Token(Token::T_SPACE, ' ', 19),
+        new Token(Token::T_BRACES_OPEN, '{{', 20),
+        new Token(Token::T_FUNCTION_START, '#', 22),
+        new Token(Token::T_IF, 'unless', 23),
+        new Token(Token::T_VARIABLE, 'MyBool', 30),
+        new Token(Token::T_BRACES_CLOSE, '}}', 36),
+        new Token(Token::T_ALPHANUMERIC, 'something', 38),
+        new Token(Token::T_BRACES_OPEN, '{{', 47),
+        new Token(Token::T_ELSE, 'else', 49),
+        new Token(Token::T_BRACES_CLOSE, '}}', 53),
+        new Token(Token::T_ALPHANUMERIC, 'nothing', 55),
+        new Token(Token::T_BRACES_OPEN, '{{', 62),
+        new Token(Token::T_FUNCTION_END, '/', 64),
+        new Token(Token::T_IF, 'unless', 65),
+        new Token(Token::T_BRACES_CLOSE, '}}', 71),
+        new Token(Token::T_SPACE, ' ', 74),
+        new Token(Token::T_NEW_LINE, "\r\n", 74)
       ], $tokens);
     }
 
     /**
-     * Verify that misformed numbers within function braces causes an error to be thrown
+     * Verify that the parser outputs the correct html
      * @test
-     * @expectedException Exception
      */
-    public function testTokenizerBadNumber() {
-      $tokens = Tokenizer::tokenize('1..5');
-      $this->assertEquals([
-        new Token(Parser::T_ALPHANUMERIC, '1..5', 0),
-      ], $tokens);
-
-      /** Improperly formed number should throw exception */
-      $tokens = Tokenizer::tokenize('{{1..5}}');
-
+    public function testParser_1() {
+      $tokens = array(Tokenizer::tokenize('./tests/Templates/test_1.tmpl'));
+      $parser_output = Parser::parseTokens($tokens, self::$data);
+      for($i = 0; $i < count($parser_output); $i++) {
+        $html_output = '';
+        if($parser_output[$i]){
+          if(gettype($parser_output[$i]) == 'string') {
+             $html_output .= $parser_output[$i];
+          } else {
+            for($j = 0; $j < count($parser_output[$i]); $j++){
+                $html_output .= $parser_output[$i][$j];
+            }
+          }
+        }
+        $this->assertEquals('Hey Tony Twyman, here\'s a slightly better formatted '
+                .'poem for you: <br /> <br />  roses are red, <br />  violets are blue, '
+                .'<br />  you are able to solve this, <br />  we are interested in you! '
+                .'<br /> <br />', $html_output);
+      }
     }
   }
 ?>

@@ -78,7 +78,7 @@
             /** @var Token $token An empty object that will be used to add new token to token array */
             $token = NULL;
             $offset = $i;
-            // Use $regex to search for a match on the current character in $line
+            /** Use $regex to search for a match on the current character in $line */
             if(preg_match(self::$regex[self::RE_OPERATORS], $line[$i])) {
               if(!$search_keywords && $line[$i] !== '{'){
                 $token = self::tokenizeAlpha($line, $i, $len, false);
@@ -147,7 +147,7 @@
           array_push($tokens, new Token(
             Token::T_NEW_LINE,
             "\r\n",
-            $offset
+            $offset + 1
           ));
         }
         fclose($file);

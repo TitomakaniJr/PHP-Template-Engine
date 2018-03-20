@@ -58,90 +58,103 @@
 
     /**
      * Creates an array of tokens from the input line
-     * @param string $line The string that will be tokenized
+     * @param string $file_path The path to the file that will be read and tokenized
      * @return array An array of tokens that were made from the input
      */
-    public function tokenize(string $line): array {
+    public function tokenize(string $file_path): array {
       /** @var bool $search_keywords Determines if we are looking for keywords or strings */
       $search_keywords = false;
-      /** @var int $offset Current position in the input line */
-      $offset = 0;
-      /** @var int $len Length of input line*/
-      $len = strlen($line);
+      $file = fopen($file_path, 'r');
       /** @var array $tokens An array of tokens that will be used by the parser */
       $tokens = array();
+      if($file) {
+        while(($line = fgets($file)) !== false) {
+          /** @var int $offset Current position in the input line */
+          $offset = 0;
+          /** @var int $len Length of input line*/
+          $len = strlen($line);
 
-      for($i = 0; $i < $len; $i++) {
-        /** @var Token $token An empty object that will be used to add new token to token array */
-        $token = NULL;
-        $offset = $i;
-        // Use $regex to search for a match on the current character in $line
-        if(preg_match(self::$regex[self::RE_OPERATORS], $line[$i])) {
-          if(!$search_keywords && $line[$i] !== '{'){
-            $token = self::tokenizeAlpha($line, $i, $len, false);
-          } else {
-            /**
-             * Compare each operator in $operators to the current character in $line
-             * @var string $value The operator string
-             * @var string $type The operator type from Parser
-             */
-            foreach(self::$operators as $value => $type) {
-              /** @var int $op_len Length of the operator we are comparing */
-              $op_len = strlen($value);
-              if(substr_compare($line, $value, $i, $op_len) == 0){
-                $token = new Token($type, $value, $i);
-                $i += $op_len - 1;
-                /** If we have found the opening or close funtion braces, update $search_keywords */
-                if($value == '{{') {
-                  $search_keywords = true;
-                } else if($value == '}}'){
-                  $search_keywords = false;
+          for($i = 0; $i < $len; $i++) {
+            /** @var Token $token An empty object that will be used to add new token to token array */
+            $token = NULL;
+            $offset = $i;
+            // Use $regex to search for a match on the current character in $line
+            if(preg_match(self::$regex[self::RE_OPERATORS], $line[$i])) {
+              if(!$search_keywords && $line[$i] !== '{'){
+                $token = self::tokenizeAlpha($line, $i, $len, false);
+              } else {
+                /**
+                 * Compare each operator in $operators to the current character in $line
+                 * @var string $value The operator string
+                 * @var string $type The operator type from Parser
+                 */
+                foreach(self::$operators as $value => $type) {
+                  /** @var int $op_len Length of the operator we are comparing */
+                  $op_len = strlen($value);
+                  if(substr_compare($line, $value, $i, $op_len) == 0){
+                    $token = new Token($type, $value, $i);
+                    $i += $op_len - 1;
+                    /** If we have found the opening or close funtion braces, update $search_keywords */
+                    if($value == '{{') {
+                      $search_keywords = true;
+                    } else if($value == '}}'){
+                      $search_keywords = false;
+                    }
+                  }
                 }
               }
+            /** If {{ has not been found we should tokenize as a string of Alphanumerical characters */
+            } else if (!$search_keywords && preg_match(self::$regex[self::RE_ALPHANUMERIC], $line[$i])) {
+              $token = self::tokenizeAlpha($line, $i, $len, false);
+            } else if(preg_match(self::$regex[self::RE_NUMERIC], $line[$i])) {
+              $token = self::tokenizeNumeric($line, $i, $len);
+            } else if(preg_match(self::$regex[self::RE_ALPHA], $line[$i])) {
+              /**
+               * Compare each keyword in $keywords to the current character in $line
+               * @var string $value The keyword string
+               * @var string $type The keyword type from Parser
+               */
+               foreach(self::$keywords as $value => $type) {
+                /** @var int $key_len Length of the keyword we are comparing */
+                $key_len = strlen($value);
+                if(substr_compare($line, $value, $i, $key_len) == 0){
+                  $token = new Token($type, $value, $i);
+                  $i += $key_len - 1;
+                  break;
+                }
+              }
+              if(!$token){
+                /** Keyword was not found, tokenize the word as a variable instead */
+                $token = self::tokenizeAlpha($line, $i, $len, true);
+              }
+            } else if(preg_match(self::$regex[self::RE_SPACE], $line[$i]) && !$search_keywords) {
+              /** @var int $init_offset The starting position in $line */
+              $init_offset = $i;
+              /** Count all white space as a single space */
+              for($i; $i < $len; $i++){
+                if(!preg_match(self::$regex[self::RE_SPACE], $line[$i])) {
+                  /** Update $i to match current offset */
+                  $i--;
+                  break;
+                }
+              }
+              $token = new Token(Token::T_SPACE, ' ', $i);
+            }
+            if($token) {
+              array_push($tokens, $token);
             }
           }
-        /** If {{ has not been found we should tokenize as a string of Alphanumerical characters */
-        } else if (!$search_keywords && preg_match(self::$regex[self::RE_ALPHANUMERIC], $line[$i])) {
-          $token = self::tokenizeAlpha($line, $i, $len, false);
-        } else if(preg_match(self::$regex[self::RE_NUMERIC], $line[$i])) {
-          $token = self::tokenizeNumeric($line, $i, $len);
-        } else if(preg_match(self::$regex[self::RE_ALPHA], $line[$i])) {
-          /**
-           * Compare each keyword in $keywords to the current character in $line
-           * @var string $value The keyword string
-           * @var string $type The keyword type from Parser
-           */
-           foreach(self::$keywords as $value => $type) {
-            /** @var int $key_len Length of the keyword we are comparing */
-            $key_len = strlen($value);
-            if(substr_compare($line, $value, $i, $key_len) == 0){
-              $token = new Token($type, $value, $i);
-              $i += $key_len - 1;
-              break;
-            }
-          }
-          if(!$token){
-            /** Keyword was not found, tokenize the word as a variable instead */
-            $token = self::tokenizeAlpha($line, $i, $len, true);
-          }
-        } else if(preg_match(self::$regex[self::RE_SPACE], $line[$i]) && !$search_keywords) {
-          /** @var int $init_offset The starting position in $line */
-          $init_offset = $i;
-          /** Count all white space as a single space */
-          for($i; $i < $len; $i++){
-            if(!preg_match(self::$regex[self::RE_SPACE], $line[$i])) {
-              /** Update $i to match current offset */
-              $i--;
-              break;
-            }
-          }
-          $token = new Token(Token::T_SPACE, ' ', $i);
+          array_push($tokens, new Token(
+            Token::T_NEW_LINE,
+            "\r\n",
+            $offset
+          ));
         }
-        if($token) {
-          array_push($tokens, $token);
-        }
+        fclose($file);
+        return $tokens;
+      } else {
+        throw new Exception('Could not open file: ' . $file_path);
       }
-      return $tokens;
     }
 
     /**

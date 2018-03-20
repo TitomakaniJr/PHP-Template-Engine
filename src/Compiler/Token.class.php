@@ -42,6 +42,8 @@
      const T_FALSE             = 16;
      /** @var int T_SPACE */
      const T_SPACE             = 17;
+     /** @var int T_NEW_LINE */
+     const T_NEW_LINE          = 18;
 
     /** @var int $type The type of the token, i.e. T_ALPHA */
     public $type;

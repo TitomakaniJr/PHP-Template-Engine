@@ -15,20 +15,22 @@
         )
       );
 
-      $someVar = "Desc";
-
-      print_r($data['Stuff'][0]->$someVar);
-
       try{
         /** @var array $tokens An array that contains all tokens from the input file */
-        $tokens = array(Tokenizer::tokenize('{{#each Stuff}} {{Thing}} are {{Desc}} {{/each}}'));
-        $output = Parser::parseTokens($tokens, $data);
-        for($i = 0; $i < count($output); $i++) {
-          if($output[$i]){
-            for($j = 0; $j < count($output[$i]); $j++){
-                echo $output[$i][$j] . '<br />';
+        $tokens = array(Tokenizer::tokenize('./src/Templates/extra.tmpl'));
+        $parser_output = Parser::parseTokens($tokens, $data);
+        for($i = 0; $i < count($parser_output); $i++) {
+          $html_output = '';
+          if($parser_output[$i]){
+            if(gettype($parser_output[$i]) == 'string') {
+               $html_output .= $parser_output[$i];
+            } else {
+              for($j = 0; $j < count($parser_output[$i]); $j++){
+                  $html_output .= $parser_output[$i][$j];
+              }
             }
           }
+          echo '<p>' . $html_output . '</p>';
         }
       } catch(Exception $e) {
         echo $e->getMessage();

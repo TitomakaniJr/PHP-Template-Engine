@@ -55,13 +55,16 @@
               self::setFunctionBraces($in_func_braces, true, $line_num, $token->offset);
               break;
             case Token::T_EACH:
-              if(current(self::$function_stack) !== Token::T_EACH){
+              if(end(self::$function_stack) !== Token::T_EACH){
                 /** Check if there was a matching @ tag */
                 self::peakPoundOperator($line_num, $token->offset);
                 array_push(self::$function_stack, Token::T_EACH);
+                if($j + 2 >= count($tokens)) {
+                  throw new Exception('Unexpected end on line ' . $line_num);
+                }
                 if($tokens[$j + 1]->type === Token::T_VARIABLE && $tokens[$j + 2]->type === Token::T_BRACES_CLOSE) {
-                  /** @var string $each_var The key that will be looped over from $data */
-                  $each_var = $tokens[$j + 1]->value;
+                  /** @var string $data_key The key that will be looped over from $data */
+                  $data_key = $tokens[$j + 1]->value;
                   /** @var string $each_tokens The array of tokens that will be used in every loop */
                   $each_tokens = array();
                   $j += 3;
@@ -71,15 +74,22 @@
                     $tokens = $tokenized_file_stream[$i];
                     /** parse through the file until a closing /each tag is found */
                     for($j = $j; $j < count($tokens); $j++) {
+                      if($j + 3 >= count($tokens)) {
+                        throw new Exception('Unexpected end on line ' . $line_num);
+                      }
                       $token = $tokens[$j];
                       if($token->type === Token::T_BRACES_OPEN
-                        && $tokens[$j + 1]->type === Token::T_FUNCTION_END
-                        && $tokens[$j + 2]->type === Token::T_EACH) {
-                        $each_tokens = self::parseEach($each_var, $each_tokens, $data);
+                            && $tokens[$j + 1]->type === Token::T_FUNCTION_END
+                            && $tokens[$j + 2]->type === Token::T_EACH
+                            && $tokens[$j + 3]->type === Token::T_BRACES_CLOSE) {
+                        array_pop(self::$operator_stack);
+                        array_pop(self::$function_stack);
+                        $each_tokens = self::parseEach($data_key, $each_tokens, $data);
                         foreach($each_tokens as $output_line){
-                          array_push($output, $output_line);
+                          $output[$i] .= $output_line[0];
                         }
-                        break;
+                        $j += 3;
+                        break 2;
                       } else {
                         array_push($each_tokens[$i], $token);
                       }
@@ -94,52 +104,87 @@
               }
               break;
             case Token::T_ELSE:
-              self::peakIfFunction($line_num, $token->offset);
+              throw new Exception('else must be used within /unless statement on line '
+                . $line_num . ' at position ' . $token->offset);
               break;
             case Token::T_FIRST:
-              self::peakPoundOperator($line_num, $token->offset);
+              throw new Exception('First must be used within @each function on line '
+                . $line_num . ' at position ' . $token->offset);
               break;
             case Token::T_FUNCTION_END:
               self::popPoundOperator($line_num, $token->offset);
               break;
             case Token::T_FUNCTION_START:
-              if(empty(self::$operator_stack)) {
-                array_push(self::$operator_stack, Token::T_FUNCTION_START);
-              } else {
-                throw new Exception('Unexpected function start on line '
-                  . $line_num . ' at position ' . $token->offset);
-              }
+              array_push(self::$operator_stack, Token::T_FUNCTION_START);
               break;
             case Token::T_IF:
-              if(current(self::$operator_stack) === Token::T_FUNCTION_START) {
-                array_pop($operator_stack);
+              /** @var bool $if_param set to true or false depending on unless param*/
+              $if_param = false;
+              if(end(self::$operator_stack) === Token::T_FUNCTION_START) {
                 if($j + 2 >= count($tokens)) {
                   throw new Exception('Unexpected end on line ' . ++$i);
                 }
-                if($tokens[$j + 1]->type === Token::T_VARIABLE) {
-
-                } else if ($tokens[$j + 1]->type === Token::T_AT) {
-                  if(current(self::$function_stack['type']) === Token::T_EACH) {
-
-                  } else {
-                    throw new Exception('@ modifiers must be used withing and each loop on line '
-                      . $line_num . ' at position ' . $tokens[$j + 1]->offset);
+                self::peakPoundOperator($line_num, $token->offset);
+                array_push(self::$function_stack, Token::T_IF);
+                /** Get true/false value from parameter */
+                $if_param = self::getIfParameter($data, $tokens[$j + 1], $line_num);
+                if($tokens[$j + 2]->type !== Token::T_BRACES_CLOSE) {
+                  throw new Exception('Expected function close braces on line '
+                    . $line_num . ' at position ' . $tokens[$j + 2]->offset);
+                }
+                /** @var array $if_tokens the array of tokens in the if statement that will be parsed */
+                $if_tokens = array();
+                /** move token index forward past the param and closing braces */
+                $j += 3;
+                for($i = $i; $i < count($tokenized_file_stream); $i++) {
+                  $line_num = $i + 1;
+                  array_push($if_tokens, array());
+                  $tokens = $tokenized_file_stream[$i];
+                  /** parse through the file until a closing /each tag is found */
+                  for($j = $j; $j < count($tokens); $j++) {
+                    $token = $tokens[$j];
+                    if($j + 4 >= count($tokens)) {
+                      throw new Exception('Unexpected end on line ' . $line_num);
+                    }
+                    /** Check if then upcoming tokens are {{else}} */
+                    if($token->type === Token::T_BRACES_OPEN
+                          && $tokens[$j + 1]->type === Token::T_ELSE
+                          && $tokens[$j + 2]->type === Token::T_BRACES_CLOSE) {
+                      $if_param = !$if_param;
+                      $j += 2;
+                      } else if($token->type === Token::T_BRACES_OPEN
+                          && $tokens[$j + 1]->type === Token::T_FUNCTION_END
+                          && $tokens[$j + 2]->type === Token::T_IF
+                          && $tokens[$j + 3]->type === Token::T_BRACES_CLOSE) {
+                      self::popIfFunction($line_num, $tokens[$j]->offset);
+                      self::popPoundOperator($line_num, $token->offset);
+                      $if_tokens = self::parseTokens($if_tokens, $data);
+                      foreach($if_tokens as $output_line){
+                        $output[$i] .= $output_line;
+                      }
+                      /** move token index past the closing {{/unless}} braces */
+                      $j += 3;
+                      break 2;
+                    } else {
+                      if($if_param) {
+                        array_push($if_tokens[$i], $token);
+                      }
+                    }
                   }
-                } else {
-                  throw new Exception('Expected variable after unless on line '
-                    . $line_num . ' at position ' . $tokens[$j + 1]->offset);
                 }
-              } else if(current(self::$operator_stack) === Token::T_FUNCTION_END) {
-                array_pop(self::$operator_stack);
-                self::popIfFunction($line_num, $token->offset);
-                if($tokens[$j + 1]->type !== Token::T_BRACES_CLOSE){
-                  throw new Exception('Unexpected function start on line '
-                    . $line_num . ' at position ' . $tokens[$j + 1]->offset);
-                }
+              } else {
+                  throw new Exception('Expected function start # on line '
+                    . $line_num . ' at position ' . $tokens[$j]->offset);
               }
               break;
             case Token::T_LAST:
-              self::popAtOperator($line_num, $token->offset);
+              throw new Exception('Last must be used within @each function on line ' . $line_num .
+                ' at position ' . $token->offset);
+              break;
+            case Token::T_NEW_LINE:
+              if($output[$i] != ' ') {
+                $output[$i] .= "<br />";
+              }
               break;
             case Token::T_NUMERIC:
               break;
@@ -151,12 +196,17 @@
                 || (!empty(self::$operator_stack) && !empty(self::$function_stack))) {
                   $output[$i] .= $data[$token->value];
               } else {
-                throw new Exception('Unexpected variable on line ' . ++$i .
+                throw new Exception('Unexpected variable on line ' . $line_num .
                   ' at position ' . $token->offset);
               }
               break;
           }
         }
+      }
+      if(!empty(self::$operator_stack)) {
+        throw new Exception('All operators were not consumed properly');
+      } else if(!empty(self::$function_stack)) {
+        throw new Exception('All functions were not closed properly');
       }
       return $output;
     }
@@ -185,7 +235,7 @@
      * @throws Exception
      */
     private function popAtOperator(int $line_num, int $offset) {
-      if(current(self::$operator_stack) === Token::T_AT) {
+      if(end(self::$operator_stack) === Token::T_AT) {
         array_pop(self::$operator_stack);
       } else {
         throw new Exception('Function call without matching @ at line: '
@@ -200,9 +250,9 @@
      * @throws Exception
      */
     private function peakPoundOperator(int $line_num, int $offset) {
-      if(!current(self::$operator_stack) === Token::T_FUNCTION_START) {
+      if(!end(self::$operator_stack) === Token::T_FUNCTION_START) {
         throw new Exception('Function call without matching # at line: '
-          . $line_num . ' at position ' . $token->offset);
+          . $line_num . ' at position ' . $offset);
       }
     }
 
@@ -213,24 +263,11 @@
      * @throws Exception
      */
     private function popPoundOperator(int $line_num, int $offset) {
-      if(current(self::$operator_stack) === Token::T_FUNCTION_START) {
+      if(end(self::$operator_stack) === Token::T_FUNCTION_START) {
         array_pop(self::$operator_stack);
       } else {
         throw new Exception('Function end without matching # at line: '
-          . $line_num . ' at position ' . $token->offset);
-      }
-    }
-
-    /**
-     * Peaks at the $function_stack to check for unless
-     * @param int $line_num The current line number from the input file
-     * @param int $offset The offset from the current token
-     * @throws Exception
-     */
-    private function peakIfFunction(int $line_num, int $offset) {
-      if(!current(self::$function_stack) === Token::T_IF) {
-        throw new Exception('else without matching unless at line: '
-          . $line_num . ' at position ' . $token->offset);
+          . $line_num . ' at position ' . $offset);
       }
     }
 
@@ -241,28 +278,58 @@
      * @throws Exception
      */
     private function popIfFunction(int $line_num, int $offset) {
-      if(current(self::$function_stack) === Token::T_IF) {
+      if(end(self::$function_stack) === Token::T_IF) {
         array_pop(self::$function_stack);
       } else {
         throw new Exception('mismatched /unless at line: '
+          . $line_num . ' at position ' . $offset);
+      }
+    }
+
+    /**
+     * Gets the boolean value of the if statement parameter
+     * @param array $data Will be used in case the param is linked to data
+     * @param Token $token The if param token
+     * @param int $line_num The current $line being parsed from the file
+     * @return bool if statement param value
+     * @throws Exception
+     */
+    private function getIfParameter(array $data, Token $token, int $line_num): bool {
+      /** Check if the param is a value in $data */
+      if($token->type === Token::T_VARIABLE) {
+        $data_value = $data[$token->value];
+        if($data_value === 'true'){
+          return true;
+        } else if($data_value === 'false') {
+          return false;
+        } else {
+          throw new Exception('Expected boolean after unless on line '
+            . $line_num . ' at position ' . $token->offset);
+        }
+      } else if($token->type === Token::T_TRUE) {
+        return true;
+      } else if($token->type === Token::T_FALSE) {
+        return false;
+      } else {
+        throw new Exception('Expected variable after unless on line '
           . $line_num . ' at position ' . $token->offset);
       }
     }
 
     /**
-     * Parses $each_tokens for each index in $data[$each_var]
-     * @param string $each_var The key that will be used with $data
+     * Parses $each_tokens for each index in $data[$data_key]
+     * @param string $data_key The key that will be used with $data
      * @param array $each_tokens All tokens found between opening and closing each tags
      * @param array $data Array which contains all necessary data for the parser
-     * @return array An array of parsed output from $each_tokens for each index in $data[$each_var]
+     * @return array An array of parsed output from $each_tokens for each index in $data[$data_key]
      * @throws Exception
      */
-    private function parseEach(string $each_var, array $each_tokens, array $data): array {
+    private function parseEach(string $data_key, array $each_tokens, array $data): array {
       /** @var array $output An array of parsed output */
       $output = array();
-      for($i = 0; $i < count($data[$each_var]); $i++) {
+      for($i = 0; $i < count($data[$data_key]); $i++) {
         /**
-         * $each_tokens gets passed by value to parse on each $data[$each_var] index
+         * $each_tokens gets passed by value to parse on each $data[$data_key] index
          * @var array $temp_stream
          */
         $temp_stream = $each_tokens;
@@ -273,34 +340,55 @@
             /** Check if we are parsing a variable that does not already have a linked object */
             if($line_tokens[$k]->type === Token::T_VARIABLE && $line_tokens[$k - 1]->type !== Token::T_ARROW) {
               /**
-               * If the token value exists as a key in $data[$each_var] it should
+               * If the token value exists as a key in $data[$data_key] it should
                * be replaced with a T_ALPHANUMERIC token
                */
-              if(array_key_exists($line_tokens[$k]->value, $data[$each_var][$i])) {
+              if(array_key_exists($line_tokens[$k]->value, $data[$data_key][$i])) {
                 /** @var string $var_value The string value form the variable token */
                 $var_value = $line_tokens[$k]->value;
                 $line_tokens[$k]  = new Token(
                   Token::T_ALPHANUMERIC,
-                  $data[$each_var][$i]->$var_value,
+                  $data[$data_key][$i]->$var_value,
                   $line_tokens[$k]->offset
                 );
               }
             /**
-             * First and last should only be used withing @each, update its
-             * value to be used in the parser
+             * First and last should only be used within @each, replace it with
+             * new T_TRUE or T_FALSE token
              */
-            } else if($line_tokens[$k]->type === Token::T_FIRST) {
-              if($i === count($each_var) - 1) {
-                $line_tokens[$k]->value = 'true';
+           } else if($line_tokens[$k]->type === Token::T_AT
+                  && $line_tokens[$k + 1]->type === Token::T_LAST) {
+              if($i === count($data[$data_key]) - 1) {
+                $line_tokens[$k + 1]  = new Token(
+                  Token::T_FALSE,
+                  'false',
+                  $line_tokens[$k]->offset
+                );
               } else {
-                $line_tokens[$k]->value = 'false';
+                $line_tokens[$k + 1]  = new Token(
+                  Token::T_TRUE,
+                  'true',
+                  $line_tokens[$k]->offset
+                );
               }
-            } else if($line_tokens[$k]->type === Token::T_LAST) {
+              array_splice($line_tokens, $k, 1);
+            } else if($line_tokens[$k]->type === Token::T_AT
+                  && $line_tokens[$k + 1]->type === Token::T_FIRST) {
               if($i === 0) {
-                $line_tokens[$k]->value = 'true';
+                $line_tokens[$k + 1]  = new Token(
+                  Token::T_FALSE,
+                  'false',
+                  $line_tokens[$k]->offset
+                );
               } else {
-                $line_tokens[$k]->value = 'false';
+                $line_tokens[$k + 1]  = new Token(
+                  Token::T_TRUE,
+                  'true',
+                  $line_tokens[$k]->offset
+                );
               }
+              /** Remove T_AT token which is no longer needed */
+              array_splice($line_tokens, $k, 1);
             }
           }
         }
